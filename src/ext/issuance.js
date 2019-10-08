@@ -264,12 +264,14 @@ function createVerificationXHR(url, tabId, tokens, issueResp) {
     xhr.setRequestHeader("Content-Type", "application/json");
     xhr.onreadystatechange = function() {
         if (xhrGoodStatus(xhr.status) && xhrDone(xhr.readyState)) {
-            const commitments = retrieveCommitments(xhr, issueResp.version);
-            if (!commitments.G || !commitments.H) {
-                throw new Error("[privacy-pass]: Retrieved commitments are incorrectly specified: " + commitments + ", version: " + issueResp.version);
-            }
-            cacheCommitments(issueResp.version, commitments.G, commitments.H);
-            verifyProofAndStoreTokens(url, tabId, tokens, issueResp, commitments);
+            retrieveCommitments(xhr, issueResp.version).then(
+                (cmt) => {
+                    cacheCommitments(issueResp.version, cmt.G, cmt.H);
+                    verifyProofAndStoreTokens(url, tabId, tokens, issueResp, cmt);
+                },
+                (e) => {
+                    console.error("[privacy-pass]: Retrieved commitments are incorrectly specified, version: " + issueResp.version + " error: " + e);
+                });
         }
     };
     return xhr;
@@ -327,8 +329,14 @@ function retrieveCommitments(xhr, version) {
     if (cmt.sig === undefined) {
         throw new Error("[privacy-pass]: Signature field is missing.");
     }
-    verifyCommitments(cmt, getCommitmentsKey());
-    return {G: cmt.G, H: cmt.H};
+
+    return verifyCommitments(cmt, getCommitmentsKey()).then((v) => {
+        if (v === true) {
+            return {G: getGenerator(), H: cmt.H};
+        } else {
+            throw new Error("[privacy-pass]: Invalid commitments.");
+        }
+    });
 }
 
 /**

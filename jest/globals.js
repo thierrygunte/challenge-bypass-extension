@@ -4,10 +4,12 @@
  * @author Drazen Urch
  */
 
-
+import 'babel-polyfill'; // allows tests run async functions
 import atob from "atob";
 import btoa from "btoa";
 import rewire from "rewire";
+import WebCrypto from "node-webcrypto-ossl";
+import util from "util";
 
 let localStorageItems = new Map();
 let spentUrlMock = new Map();
@@ -24,6 +26,8 @@ const consoleMock = {
     error: jest.fn(),
 };
 
+window.crypto = [];
+window.TextEncoder = [];
 window.consoleMock = consoleMock;
 window.localStorageItems = localStorageItems;
 window.spentUrlMock = spentUrlMock;
@@ -50,6 +54,8 @@ window.workflowSet = () => {
     workflow.__set__("reloadBrowserTab", reloadBrowserTabMock);
     workflow.__set__("atob", atob);
     workflow.__set__("btoa", btoa);
+    workflow.__set__("crypto", new WebCrypto());
+    workflow.__set__("TextEncoder", util.TextEncoder);
 
     workflow.__set__("setSpendFlag", setSpendFlagMock);
     workflow.__set__("getSpendFlag", getSpendFlagMock);

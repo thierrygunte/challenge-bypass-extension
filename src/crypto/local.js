@@ -6,6 +6,7 @@
  */
 
 /* global sjcl */
+/* exported getGenerator */
 /* exported sec1Encode */
 /* exported sec1EncodeToBase64 */
 /* exported sec1DecodeFromBase64 */
@@ -67,6 +68,13 @@ function initECSettings(h2cParams) {
  */
 function getActiveECSettings() {
     return {curve: CURVE, hash: CURVE_H2C_HASH, method: CURVE_H2C_METHOD};
+}
+/**
+ * Returns the generator of the current curve.
+ * @return {string} // base64 encoded generator.
+ */
+function getGenerator() {
+    return sec1EncodeToBase64(CURVE.G, false);
 }
 
 /**
@@ -297,68 +305,61 @@ function validResponseCompression(compression, setting) {
 /**
  * Parse a DER-encoded signature.
  * @param {string} derSignature - A signature in DER format.
- * @return {sjcl.bitArray} a signature object for sjcl library.
+ * @return {Uint8Array} a signature object for sjcl library.
  */
 function parseSignaturefromDER(derSignature) {
-    try {
-        const sigBN = parseKeys.signature.decode(
-            Buffer.from(derSignature, "base64"),
-            "der"
-        );
-        return sjcl.codec.bytes.toBits(
-            sjcl.bitArray.concat(sigBN.r.toArray(), sigBN.s.toArray())
-        );
-    } catch (error) {
-        throw new Error(
-            "[privacy-pass]: Failed on parsing commitment signature. " + error
-        );
+    const sig = Uint8Array.from(atob(derSignature), (c) => c.charCodeAt(0));
+    if (sig[0] !== 0x30 || (sig.length - 2) !== sig[1]) {
+        throw new Error("[privacy-pass]: Signature cannot be parsed.");
     }
+    let head = 2; // sequence
+    let start = head + 2; // first bitstring
+    let end = start + sig[start - 1];
+    let r = sig.slice(start, end);
+    if ((end - start) === 33 && r[0] === 0x0) {
+        r = r.slice(1);
+    }
+    start = end + 2; // second bitstring
+    end = start + sig[start - 1];
+    let s = sig.slice(start, end);
+    if ((end - start) === 33 && s[0] === 0x0) {
+        s = s.slice(1);
+    }
+    return Uint8Array.from([...r, ...s]);
 }
 
 /**
- * Parse a DER-encoded publick key.
- * @param {string} derPublicKey - A public key in DER format.
- * @return {sjcl.ecc.ecdsa.publicKey} a public key for sjcl library.
+ * Parse a PEM-encoded publick key.
+ * @param {string} pemPublicKey - A public key in PEM format.
+ * @return {CryptoKey} a Promise with a public key for Web Crypto API.
  */
-function parsePublicKeyfromDER(derPublicKey) {
-    const OIDCurves = [];
-    OIDCurves["c256"] = "1.2.840.10045.3.1.7"; // oid(prime256v1)
-
-    try {
-        const pkJson = parseKeys(derPublicKey);
-        assert.equal(pkJson.type, "ec");
-        assert.equal(
-            pkJson.data.algorithm.curve.join("."),
-            OIDCurves[sjcl.ecc.curveName(CURVE)]
-        );
-        const point = sec1DecodeFromBytes(pkJson.data.subjectPublicKey.data);
-        return new sjcl.ecc.ecdsa.publicKey(CURVE, point);
-    } catch (error) {
-        throw new Error(
-            "[privacy-pass]: Failed on parsing public key. " + error
-        );
-    }
+function parsePublicKey(pemPublicKey) {
+    const pemHeader = "-----BEGIN PUBLIC KEY-----";
+    const pemFooter = "-----END PUBLIC KEY-----";
+    const pemContents = pemPublicKey.substring(pemHeader.length, pemPublicKey.length - pemFooter.length);
+    const derPublicKey = Uint8Array.from(atob(pemContents), (c) => c.charCodeAt(0));
+    return crypto.subtle.importKey("spki", derPublicKey,
+        {name: "ECDSA", namedCurve: "P-256"}, false, ["verify"]
+    );
 }
 
 /**
  * Verify the signature of commitments.
  * @param {json} comms - commitments to verify
- * @param {string} derPublicKey - A public key in DER format.
- * @return {boolean} True, if the commitment has valid signature and is not
- *                   expired; otherwise, throws an exception.
+ * @param {string} pemPublicKey - A public key in PEM format.
+ * @return {boolean} A Promise with a boolean equal to True, if the commitment
+ *                   has valid signature and is not expired; otherwise, false.
  */
-function verifyCommitments(comms, derPublicKey) {
-    const sig = parseSignaturefromDER(comms.sig);
+async function verifyCommitments(comms, pemPublicKey) {
+    const signature = parseSignaturefromDER(comms.sig);
     delete comms.sig;
     const msg = JSON.stringify(comms);
-    const pk = parsePublicKeyfromDER(derPublicKey);
-    const hmsg = sjcl.hash.sha256.hash(msg);
-    comms.G = sec1EncodeToBase64(CURVE.G, false);
-    try {
-        return pk.verify(hmsg, sig);
-    } catch (error) {
-        throw new Error("[privacy-pass]: Invalid commitment.");
-    }
+    const coder = new TextEncoder();
+    const publicKey = await parsePublicKey(pemPublicKey);
+    return await crypto.subtle.verify({
+        name: "ECDSA",
+        hash: {name: "SHA-256"},
+    }, publicKey, signature, coder.encode(msg));
 }
 
 /**

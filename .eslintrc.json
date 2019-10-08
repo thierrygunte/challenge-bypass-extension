@@ -42,6 +42,7 @@
         "getConfigId": true,
         "getConfigName": true,
         "getCurvePoints": true,
+        "getGenerator": true,
         "getSpendFlag": true,
         "getTabId": true,
         "getTarget": true,

@@ -1,5 +1,4 @@
 SOURCES= src/crypto/keccak/keccak.js \
-         src/ext/requires.js         \
          src/crypto/local.js         \
          src/ext/background.js       \
          src/ext/browserUtils.js     \
@@ -42,7 +41,7 @@ lint: build
 dist: build
 	mkdir -p ./dist
 	cp -a addon/* ./dist/
-	zip ext.zip ./dist
+	zip -r ext.zip ./dist
 	rm -rf ./dist
 
 addon/build.js: ${SJCL_PATH}/sjcl.js ${SOURCES} ${LISTENER}

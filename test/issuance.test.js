@@ -72,47 +72,62 @@ describe("commitments parsing and caching", () => {
         const xhr = createVerificationXHR(); // this usually takes params
         const old = workflow.__get__("getCommitmentsKey");
         workflow.__set__("getCommitmentsKey", () => "badPublicKey");
-        expect(
-            jest.fn(() => retrieveCommitments(xhr, "2.0-sig-ok"))
-        ).toThrow("Failed on parsing public key");
-        workflow.__set__("getCommitmentsKey", old);
+        return retrieveCommitments(xhr, "2.0-sig-ok").then(
+            (c) => expect(c).toBe({}),
+            (e) => expect(e.message).toMatch("ImportKey")
+        ).finally(() => workflow.__set__("getCommitmentsKey", old));
     });
 
     test("parse correctly (null version)", () => {
         const xhr = createVerificationXHR(); // this usually takes params
-        const commitments = retrieveCommitments(xhr);
-        expect(testG === commitments.G).toBeTruthy();
-        expect(testH === commitments.H).toBeTruthy();
+        return retrieveCommitments(xhr).then(
+            (cmt) => {
+                expect(cmt.G).toEqual(testG);
+                expect(cmt.H).toEqual(testH);
+            }
+        );
     });
 
     test("parse correctly (v1.0)", () => {
         const xhr = createVerificationXHR(); // this usually takes params
-        const commitments = retrieveCommitments(xhr, "1.0");
-        expect(testG === commitments.G).toBeTruthy();
-        expect(testH === commitments.H).toBeTruthy();
+        return retrieveCommitments(xhr, "1.0").then(
+            (cmt) => {
+                expect(cmt.G).toEqual(testG);
+                expect(cmt.H).toEqual(testH);
+            }
+        );
     });
 
     test("parse correctly (sig-ok)", () => {
         const xhr = createVerificationXHR(); // this usually takes params
-        const commitments = retrieveCommitments(xhr, "2.0-sig-ok");
-        expect(testSigG === commitments.G).toBeTruthy();
-        expect(testSigH === commitments.H).toBeTruthy();
+        return retrieveCommitments(xhr, "2.0-sig-ok").then(
+            (cmt) => {
+                expect(cmt.G).toEqual(testSigG);
+                expect(cmt.H).toEqual(testSigH);
+            }
+        );
     });
 
     test("parse correctly (dev)", () => {
-        workflow.__with__({dev: () => true})(() => {
-            const xhr = createVerificationXHR(); // this usually takes params
-            const commitments = retrieveCommitments(xhr, "1.1");
-            expect(testDevG === commitments.G).toBeTruthy();
-            expect(testDevH === commitments.H).toBeTruthy();
-        });
+        const xhr = createVerificationXHR(); // this usually takes params
+        const old = workflow.__get__("dev");
+        workflow.__set__("dev", () => true);
+        return retrieveCommitments(xhr, "1.1").then(
+            (cmt) => {
+                expect(cmt.G).toEqual(testDevG);
+                expect(cmt.H).toEqual(testDevH);
+            }
+        ).finally(() => workflow.__set__("dev", old));
     });
 
     test("parse correctly (hkdf)", () => {
         const xhr = createVerificationXHR(); // this usually takes params
-        const commitments = retrieveCommitments(xhr, "hkdf");
-        expect(hkdfG === commitments.G).toBeTruthy();
-        expect(hkdfH === commitments.H).toBeTruthy();
+        return retrieveCommitments(xhr, "hkdf").then(
+            (cmt) => {
+                expect(cmt.G).toEqual(hkdfG);
+                expect(cmt.H).toEqual(hkdfH);
+            }
+        );
     });
 
     test("caching commitments", () => {
@@ -142,16 +157,18 @@ describe("commitments parsing and caching", () => {
 
     test("malformed commitments signature", () => {
         const xhr = createVerificationXHR(); // this usually takes params
-        expect(
-            jest.fn(() => retrieveCommitments(xhr, "2.0-sig-bad"))
-        ).toThrow("Failed on parsing commitment signature");
+        return retrieveCommitments(xhr, "2.0-sig-bad").then(
+            (c) => expect(c).toBe({}),
+            (e) => expect(e.message).toMatch("Signature cannot be parsed")
+        );
     });
 
     test("signature doesn't verify", () => {
         const xhr = createVerificationXHR(); // this usually takes params
-        expect(
-            jest.fn(() => retrieveCommitments(xhr, "2.0-sig-fail"))
-        ).toThrow("Invalid commitment");
+        return retrieveCommitments(xhr, "2.0-sig-fail").then(
+            (c) => expect(c).toBe({}),
+            (e) => expect(e.message).toMatch("Invalid commitments")
+        );
     });
 
     test("expired commitments", () => {
